@@ -1,5 +1,5 @@
 cmake_minimum_required (VERSION 3.4)
-project (biocpp_scratchpad CXX)
+project (decovar CXX)
 
 #--------------------------------------------------------------------------------------------------
 # Dependencies
@@ -22,6 +22,6 @@ add_subdirectory(submodules/fmt)
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
-add_executable (main main.cpp)
-target_link_libraries (main sharg::sharg fmt::fmt-header-only biocpp::core biocpp::io)
-target_compile_options(main PRIVATE -Wall -Wextra)
+add_executable (decovar main.cpp)
+target_link_libraries (decovar sharg::sharg fmt::fmt-header-only biocpp::core biocpp::io)
+target_compile_options(decovar PRIVATE -Wall -Wextra)
