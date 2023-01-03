@@ -7,3 +7,6 @@
 [submodule "submodules/biocpp-io"]
 	path = submodules/biocpp-io
 	url = ../../biocpp/biocpp-io
+[submodule "submodules/fmt"]
+	path = submodules/fmt
+	url = ../../fmtlib/fmt.git
