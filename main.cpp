@@ -55,7 +55,7 @@ program_options parse_options(int const argc, char const * const * const argv)
 
 void determine_filtered_alleles(record_t::info_t const & record_info,
                                 size_t const record_no,
-                                size_t const R,
+                                size_t const n_alts,
                                 program_options const & opts,
                                 std::vector<int> & filtered_alleles) // <- out-param
 {
@@ -72,15 +72,15 @@ void determine_filtered_alleles(record_t::info_t const & record_info,
             }
 
             std::vector<float> const & afs = std::get<std::vector<float>>(value);
-            if (afs.size() != R)
+            if (afs.size() != n_alts)
             {
                 throw decovar_error{fmt::format("[Record no: {}] AF field of multi-allelic record has wrong "
-                                                "size: {}, but {} was expected.", record_no, afs.size(), R)};
+                                                "size: {}, but {} was expected.", record_no, afs.size(), n_alts)};
             }
 
-            for (size_t i = 0; i < R; ++i)
+            for (size_t i = 0; i < n_alts; ++i)
                 if (afs[i] < opts.rare_af_threshold)
-                    filtered_alleles[i] = 1;
+                    filtered_alleles[i + 1] = 1; // filtered_alleles[0] is REF and never filtered
 
             has_AF = true;
             break;
@@ -96,42 +96,33 @@ void determine_filtered_alleles(record_t::info_t const & record_info,
 
 template <typename T>
 void remove_by_indexes(std::vector<T> & vec,
-                       bool const skip_vector_1st_elem,
-                       std::vector<int> const & filter_vector)
+                       std::span<int const> const filter_vector)
 {
-    assert(vec.size() - skip_vector_1st_elem == filter_vector.size());
-
-    auto const beg = vec.begin() + skip_vector_1st_elem;
-
     auto pred = [&] (T const & elem) -> bool
     {
-        ptrdiff_t i = &elem - &*beg;
+        ptrdiff_t i = (&elem - &*vec.begin()) % filter_vector.size(); // modulo down-maps for concat's inner vector
         assert(i >= 0);
-        return filter_vector[i];
+        return filter_vector[i] != 0;
     };
-    auto ret_range = std::ranges::remove_if(beg, vec.end(), pred);
-    size_t new_size = ret_range.size() + skip_vector_1st_elem;
-
-#ifndef NDEBUG
-    size_t ones = std::accumulate(filter_vector.begin(), filter_vector.end(), 0ul);
-    assert(ones + skip_vector_1st_elem == new_size);
-#endif
-
-    vec.resize(new_size);
+    auto ret_range = std::ranges::remove_if(vec.begin(), vec.end(), pred);
+    vec.resize(ret_range.size());
 }
 
 void update_infos(record_t::info_t & record_info, //← in-out parameter
                   header_t const & hdr,
                   size_t const record_no,
-                  std::vector<int> const filtered_alleles)
+                  std::span<int const> const filtered_alleles)
 {
+    std::span<int const> const filtered_alleles_A = filtered_alleles;
+    std::span<int const> const filtered_alleles_R = std::span{filtered_alleles.begin() + 1, filtered_alleles.end()};
+    std::span<int const> filtered_alleles_select{};
+
     for (auto && [ _id, value ] : record_info)
     {
         std::string_view id = _id;
         size_t const i = hdr.string_to_info_pos().at(id);
         header_t::info_t const & info = hdr.infos[i];
 
-        bool is_R = false;
         auto visitor = bio::meta::overloaded{
             [&] (auto)
             {
@@ -141,16 +132,23 @@ void update_infos(record_t::info_t & record_info, //← in-out parameter
             },
             [&] <typename T> (std::vector<T> & vec)
             {
-                remove_by_indexes(vec, is_R, filtered_alleles);
+                assert(vec.size() == filtered_alleles_select.size());
+#ifndef NDEBUG
+                size_t ones = std::accumulate(filtered_alleles_select.begin(), filtered_alleles_select.end(), 0ul);
+#endif
+                remove_by_indexes(vec, filtered_alleles_select);
+                assert(vec.size() == ones);
             }
         };
 
         switch(info.number)
         {
             case bio::io::var::header_number::R:
-                is_R = true;
-                [[fallthrough]];
+                filtered_alleles_select = filtered_alleles_R;
+                std::visit(visitor, value);
+                break;
             case bio::io::var::header_number::A:
+                filtered_alleles_select = filtered_alleles_A;
                 std::visit(visitor, value);
                 break;
             default:
@@ -159,6 +157,93 @@ void update_infos(record_t::info_t & record_info, //← in-out parameter
     }
 }
 
+void update_genotypes(record_t::genotypes_t & record_genotypes, //← in-out parameter
+                      header_t const & hdr,
+                      size_t const record_no,
+                      std::span<int const> const filtered_alleles)
+{
+    std::span<int const> const filtered_alleles_A = filtered_alleles;
+    std::span<int const> const filtered_alleles_R = std::span{filtered_alleles.begin() + 1, filtered_alleles.end()};
+    std::span<int const> filtered_alleles_select{};
+    size_t const n_alts = filtered_alleles_R.size();
+
+    for (auto && [ _id, value ] : record_genotypes)
+    {
+        std::string_view id = _id;
+        size_t const i = hdr.string_to_format_pos().at(id);
+        header_t::format_t const & format = hdr.formats[i];
+
+        auto visitor = bio::meta::overloaded{
+            [&] (auto)
+            {
+                throw decovar_error{fmt::format("[Record no: {}] Expected a vector when trimming field {}.",
+                                                record_no,
+                                                id)};
+            },
+            [&] <typename T> (bio::ranges::concatenated_sequences<std::vector<T>> & vec)
+            {
+                size_t n_samples = vec.size();
+                size_t n_alleles_before = filtered_alleles_select.size();
+                size_t n_alleles_after =
+                    n_alleles_before - std::accumulate(filtered_alleles_select.begin(), filtered_alleles_select.end(), 0ul);
+
+                std::pair raw_data = vec.raw_data();
+
+                assert(vec.concat_size() == n_samples * n_alleles_before);
+                assert(raw_data.second.back() == vec.concat_size() + 1);
+
+
+                remove_by_indexes(raw_data.first, filtered_alleles_select);
+                assert(raw_data.first.size() == n_samples * n_alleles_after);
+
+                assert(raw_data.second.size() == n_samples + 1); // size remains unchanged
+
+                for (size_t i = 0; i < n_samples + 1; ++i)
+                {
+                    assert(raw_data.second[i] == i * n_alleles_before);
+                    raw_data.second[i] = i * n_alleles_after;
+                }
+                assert(raw_data.second.back() == raw_data.first.size()+ 1);
+
+            }
+        };
+
+        switch(format.number)
+        {
+            case bio::io::var::header_number::R:
+                filtered_alleles_select = filtered_alleles_R;
+                std::visit(visitor, value);
+                break;
+            case bio::io::var::header_number::A:
+                filtered_alleles_select = filtered_alleles_A;
+                std::visit(visitor, value);
+                break;
+            case bio::io::var::header_number::G:
+            {
+                //TODO the following is only valid for bi-allelic entries; handle mono and throw on P > 2
+
+                std::vector<int> new_filtered_alleles; // TODO cache this outside
+                new_filtered_alleles.resize(bio::io::var::detail::vcf_gt_formula(n_alts, n_alts) + 1);
+
+                for (size_t b = 0; b < n_alts; ++b)
+                {
+                    for (size_t a = 0; a <= b; ++a)
+                    {
+                        assert(bio::io::var::detail::vcf_gt_formula(a, b) < new_filtered_alleles.size());
+                        new_filtered_alleles[bio::io::var::detail::vcf_gt_formula(a, b)] = filtered_alleles_A[a] ||
+                        filtered_alleles_A[b];
+                    }
+                }
+
+                filtered_alleles_select = new_filtered_alleles;
+                std::visit(visitor, value);
+                break;
+            }
+            default:
+                break;
+        }
+    }
+}
 
 void decovar(program_options const & opts)
 {
@@ -177,17 +262,15 @@ void decovar(program_options const & opts)
     {
         ++record_no;
 
-        record.genotypes.clear(); // improve readability temporarily
-
-        if (size_t R = record.alt.size(); R > 1ul) // multi-allelic
+        if (size_t n_alts = record.alt.size(); n_alts > 1ul) // multi-allelic
         {
             std::cerr << std::flush;
             std::cout << std::flush;
             fmt::print(stderr, "muli-allelic record\n");
 
             filtered_alleles.clear();
-            filtered_alleles.resize(R);
-            determine_filtered_alleles(record.info, record_no, R, opts, filtered_alleles);
+            filtered_alleles.resize(n_alts + 1); // + 1 for ref
+            determine_filtered_alleles(record.info, record_no, n_alts, opts, filtered_alleles);
 
             fmt::print(stderr, "filtered_alleles: {}\n", filtered_alleles);
 
@@ -205,13 +288,13 @@ void decovar(program_options const & opts)
 
 
             /* update alts */
-            remove_by_indexes(record.alt, false, filtered_alleles);
+            remove_by_indexes(record.alt, std::span{filtered_alleles.begin() + 1, filtered_alleles.end()});
 
             /* update info */
             update_infos(record.info, hdr, record_no, filtered_alleles);
 
             /* update genotypes */
-            // TODO
+            update_genotypes(record.genotypes, hdr, record_no, filtered_alleles);
 
             // DEBUG
             std::cout << std::flush;
