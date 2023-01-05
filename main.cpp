@@ -15,6 +15,15 @@ struct decovar_error : std::runtime_error
     decovar_error(std::string msg) : std::runtime_error{msg} {}
 };
 
+/* vectors for fields of multiplicity A, R or G indicating whether that value at the positions shall be removed(1)
+* or not (0) */
+struct filter_vectors_t
+{
+    std::vector<int/*bool*/> A;
+    std::vector<int/*bool*/> R;
+    std::vector<int/*bool*/> G;
+};
+
 struct program_options
 {
     std::string input_file;
@@ -22,7 +31,6 @@ struct program_options
 
     float rare_af_threshold = 1e-5;
 };
-
 
 program_options parse_options(int const argc, char const * const * const argv)
 {
@@ -57,10 +65,14 @@ void determine_filtered_alleles(record_t::info_t const & record_info,
                                 size_t const record_no,
                                 size_t const n_alts,
                                 program_options const & opts,
-                                std::vector<int> & filtered_alleles) // <- out-param
+                                filter_vectors_t & filter_vectors) // <- out-param
 {
     bool has_AF = false;
 
+    /* filtered alleles R */
+    filter_vectors.R.clear();
+    filter_vectors.R.resize(n_alts + 1);
+    filter_vectors.R[0] = 0;
     for (auto && [ id, value ] : record_info)
     {
         if (id == "AF")
@@ -80,7 +92,7 @@ void determine_filtered_alleles(record_t::info_t const & record_info,
 
             for (size_t i = 0; i < n_alts; ++i)
                 if (afs[i] < opts.rare_af_threshold)
-                    filtered_alleles[i + 1] = 1; // filtered_alleles[0] is REF and never filtered
+                    filter_vectors.R[i + 1] = 1; // filtered_alleles[0] is REF and never filtered
 
             has_AF = true;
             break;
@@ -92,11 +104,25 @@ void determine_filtered_alleles(record_t::info_t const & record_info,
         //TODO look for AC and AN and update those?
         throw decovar_error{fmt::format("[Record no: {}] no AF field in record.", record_no)};
     }
+
+    /* filtered alleles A */
+    filter_vectors.A.resize(n_alts);
+    std::ranges::copy(filter_vectors.R.begin() + 1, filter_vectors.R.end(), filter_vectors.A.begin());
+
+    /* filtered alleles G */
+    filter_vectors.G.resize(bio::io::var::detail::vcf_gt_formula(n_alts, n_alts) + 1);
+    for (size_t b = 0; b <= n_alts; ++b)
+    {
+        for (size_t a = 0; a <= b; ++a)
+        {
+            assert(bio::io::var::detail::vcf_gt_formula(a, b) < filter_vectors.G.size());
+            filter_vectors.G[bio::io::var::detail::vcf_gt_formula(a, b)] = filter_vectors.R[a] || filter_vectors.R[b];
+        }
+    }
 }
 
 template <typename T>
-void remove_by_indexes(std::vector<T> & vec,
-                       std::span<int const> const filter_vector)
+void remove_by_indexes(std::vector<T> & vec, std::span<int const> const filter_vector)
 {
     auto pred = [&] (T const & elem) -> bool
     {
@@ -104,18 +130,16 @@ void remove_by_indexes(std::vector<T> & vec,
         assert(i >= 0);
         return filter_vector[i] != 0;
     };
-    auto ret_range = std::ranges::remove_if(vec.begin(), vec.end(), pred);
-    vec.resize(ret_range.size());
+    auto removed_range = std::ranges::remove_if(vec.begin(), vec.end(), pred);
+    vec.resize(vec.size() - removed_range.size());
 }
 
 void update_infos(record_t::info_t & record_info, //← in-out parameter
                   header_t const & hdr,
                   size_t const record_no,
-                  std::span<int const> const filtered_alleles)
+                  filter_vectors_t const & filter_vectors)
 {
-    std::span<int const> const filtered_alleles_A = filtered_alleles;
-    std::span<int const> const filtered_alleles_R = std::span{filtered_alleles.begin() + 1, filtered_alleles.end()};
-    std::span<int const> filtered_alleles_select{};
+    std::span<int const> selected_filter_vector{};
 
     for (auto && [ _id, value ] : record_info)
     {
@@ -132,23 +156,23 @@ void update_infos(record_t::info_t & record_info, //← in-out parameter
             },
             [&] <typename T> (std::vector<T> & vec)
             {
-                assert(vec.size() == filtered_alleles_select.size());
+                assert(vec.size() == selected_filter_vector.size());
 #ifndef NDEBUG
-                size_t ones = std::accumulate(filtered_alleles_select.begin(), filtered_alleles_select.end(), 0ul);
+                size_t ones = std::accumulate(selected_filter_vector.begin(), selected_filter_vector.end(), 0ul);
 #endif
-                remove_by_indexes(vec, filtered_alleles_select);
-                assert(vec.size() == ones);
+                remove_by_indexes(vec, selected_filter_vector);
+                assert(vec.size() == selected_filter_vector.size() - ones);
             }
         };
 
         switch(info.number)
         {
             case bio::io::var::header_number::R:
-                filtered_alleles_select = filtered_alleles_R;
+                selected_filter_vector = filter_vectors.R;
                 std::visit(visitor, value);
                 break;
             case bio::io::var::header_number::A:
-                filtered_alleles_select = filtered_alleles_A;
+                selected_filter_vector = filter_vectors.A;
                 std::visit(visitor, value);
                 break;
             default:
@@ -160,12 +184,9 @@ void update_infos(record_t::info_t & record_info, //← in-out parameter
 void update_genotypes(record_t::genotypes_t & record_genotypes, //← in-out parameter
                       header_t const & hdr,
                       size_t const record_no,
-                      std::span<int const> const filtered_alleles)
+                      filter_vectors_t const & filter_vectors)
 {
-    std::span<int const> const filtered_alleles_A = filtered_alleles;
-    std::span<int const> const filtered_alleles_R = std::span{filtered_alleles.begin() + 1, filtered_alleles.end()};
-    std::span<int const> filtered_alleles_select{};
-    size_t const n_alts = filtered_alleles_R.size();
+    std::span<int const> selected_filter_vector{};
 
     for (auto && [ _id, value ] : record_genotypes)
     {
@@ -183,19 +204,19 @@ void update_genotypes(record_t::genotypes_t & record_genotypes, //← in-out par
             [&] <typename T> (bio::ranges::concatenated_sequences<std::vector<T>> & vec)
             {
                 size_t n_samples = vec.size();
-                size_t n_alleles_before = filtered_alleles_select.size();
+                size_t n_alleles_before = selected_filter_vector.size();
                 size_t n_alleles_after =
-                    n_alleles_before - std::accumulate(filtered_alleles_select.begin(), filtered_alleles_select.end(), 0ul);
+                    n_alleles_before - std::accumulate(selected_filter_vector.begin(), selected_filter_vector.end(), 0ul);
 
                 std::pair raw_data = vec.raw_data();
 
                 assert(vec.concat_size() == n_samples * n_alleles_before);
-                assert(raw_data.second.back() == vec.concat_size() + 1);
+                assert(raw_data.second.back() == vec.concat_size());
 
+                remove_by_indexes(raw_data.first, selected_filter_vector);
+                assert(vec.concat_size() == n_samples * n_alleles_after);
 
-                remove_by_indexes(raw_data.first, filtered_alleles_select);
-                assert(raw_data.first.size() == n_samples * n_alleles_after);
-
+                assert(vec.size() == n_samples); // size remains unchanged
                 assert(raw_data.second.size() == n_samples + 1); // size remains unchanged
 
                 for (size_t i = 0; i < n_samples + 1; ++i)
@@ -203,42 +224,24 @@ void update_genotypes(record_t::genotypes_t & record_genotypes, //← in-out par
                     assert(raw_data.second[i] == i * n_alleles_before);
                     raw_data.second[i] = i * n_alleles_after;
                 }
-                assert(raw_data.second.back() == raw_data.first.size()+ 1);
-
+                assert(raw_data.second.back() == raw_data.first.size());
             }
         };
 
         switch(format.number)
         {
             case bio::io::var::header_number::R:
-                filtered_alleles_select = filtered_alleles_R;
+                selected_filter_vector = filter_vectors.R;
                 std::visit(visitor, value);
                 break;
             case bio::io::var::header_number::A:
-                filtered_alleles_select = filtered_alleles_A;
+                selected_filter_vector = filter_vectors.A;
                 std::visit(visitor, value);
                 break;
             case bio::io::var::header_number::G:
-            {
-                //TODO the following is only valid for bi-allelic entries; handle mono and throw on P > 2
-
-                std::vector<int> new_filtered_alleles; // TODO cache this outside
-                new_filtered_alleles.resize(bio::io::var::detail::vcf_gt_formula(n_alts, n_alts) + 1);
-
-                for (size_t b = 0; b < n_alts; ++b)
-                {
-                    for (size_t a = 0; a <= b; ++a)
-                    {
-                        assert(bio::io::var::detail::vcf_gt_formula(a, b) < new_filtered_alleles.size());
-                        new_filtered_alleles[bio::io::var::detail::vcf_gt_formula(a, b)] = filtered_alleles_A[a] ||
-                        filtered_alleles_A[b];
-                    }
-                }
-
-                filtered_alleles_select = new_filtered_alleles;
+                selected_filter_vector = filter_vectors.G;
                 std::visit(visitor, value);
                 break;
-            }
             default:
                 break;
         }
@@ -256,7 +259,7 @@ void decovar(program_options const & opts)
 
     bio::io::var::writer writer = (opts.output_file == "-") ? bio::io::var::writer{std::cout, bio::io::vcf{}} : bio::io::var::writer{opts.output_file};
 
-    std::vector<int/*bool*/> filtered_alleles; // bool vector of allele number with filtered yes/no
+    filter_vectors_t filter_vectors;
     size_t record_no = -1;
     for (record_t & record : reader)
     {
@@ -268,13 +271,16 @@ void decovar(program_options const & opts)
             std::cout << std::flush;
             fmt::print(stderr, "muli-allelic record\n");
 
-            filtered_alleles.clear();
-            filtered_alleles.resize(n_alts + 1); // + 1 for ref
-            determine_filtered_alleles(record.info, record_no, n_alts, opts, filtered_alleles);
+            determine_filtered_alleles(record.info,
+                                       record_no,
+                                       n_alts,
+                                       opts,
+                                       filter_vectors);
 
-            fmt::print(stderr, "filtered_alleles: {}\n", filtered_alleles);
+            fmt::print(stderr, "filter_vector.A: {}\n", filter_vectors.A);
+            fmt::print(stderr, "filter_vector.G: {}\n", filter_vectors.G);
 
-            if (std::ranges::all_of(filtered_alleles, std::identity{}))
+            if (std::ranges::all_of(filter_vectors.A, std::identity{}))
             {
                 fmt::print(stderr, "removing record {}\n", record_no);
                 continue; // all alleles are removed → skip this record
@@ -288,13 +294,13 @@ void decovar(program_options const & opts)
 
 
             /* update alts */
-            remove_by_indexes(record.alt, std::span{filtered_alleles.begin() + 1, filtered_alleles.end()});
+            remove_by_indexes(record.alt, filter_vectors.A);
 
             /* update info */
-            update_infos(record.info, hdr, record_no, filtered_alleles);
+            update_infos(record.info, hdr, record_no, filter_vectors);
 
             /* update genotypes */
-            update_genotypes(record.genotypes, hdr, record_no, filtered_alleles);
+            update_genotypes(record.genotypes, hdr, record_no, filter_vectors);
 
             // DEBUG
             std::cout << std::flush;
@@ -314,6 +320,10 @@ int main(int argc, char **argv)
 {
     std::ios::sync_with_stdio(false);
 
+#ifndef NDEBUG
+    program_options o = parse_options(argc, argv);
+    decovar(o);
+#else
     try
     {
         program_options o = parse_options(argc, argv);
@@ -334,6 +344,6 @@ int main(int argc, char **argv)
         fmt::print(stderr, "[deCoVar error] {}\n", ext.what());
         return -1;
     }
-
+#endif
     return 0;
 }
