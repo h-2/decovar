@@ -22,6 +22,7 @@ We recommed using a package from the [releases page](./releases).
 <summary>Cloning and building from source</summary>
 
 <p>
+
 *Please note that GCC>=10.3 is required; LLVM and MSVC are not supported.*
 
 Clone the latest main-branch:

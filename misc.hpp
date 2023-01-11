@@ -22,9 +22,8 @@
 
 #pragma once
 
-#include <thread>
-
 #include <sharg/all.hpp>
+#include <thread>
 
 #include <bio/io/var/header.hpp>
 #include <bio/io/var/record.hpp>
@@ -34,9 +33,10 @@ using header_t = bio::io::var::header;
 
 struct decovar_error : std::runtime_error
 {
-    template <typename ...T>
+    template <typename... T>
     decovar_error(fmt::format_string<T...> format, T &&... args) :
-        std::runtime_error{fmt::format(format, std::forward<T>(args)...)} {}
+      std::runtime_error{fmt::format(format, std::forward<T>(args)...)}
+    {}
 };
 
 struct program_options
@@ -44,16 +44,17 @@ struct program_options
     std::string input_file;
     std::string output_file = "-";
 
-    float rare_af_threshold = 0;
+    float  rare_af_threshold     = 0ul;
+    size_t local_alleles         = 0ul;
+    bool   remove_global_alleles = true;
 
     size_t threads = std::max<size_t>(2, std::min<size_t>(8, std::thread::hardware_concurrency()));
 
     bool verbose = false;
 };
 
-
-template <typename ... T>
-inline void log(program_options const & opts, fmt::format_string<T...> format, T&&... args)
+template <typename... T>
+inline void log(program_options const & opts, fmt::format_string<T...> format, T &&... args)
 {
     if (opts.verbose)
     {
@@ -62,13 +63,12 @@ inline void log(program_options const & opts, fmt::format_string<T...> format, T
     }
 }
 
-
 class input_file_or_stdin_validator : public sharg::input_file_validator
 {
 private:
     using base_t = sharg::input_file_validator;
-public:
 
+public:
     using base_t::base_t;
 
     virtual void operator()(std::filesystem::path const & file) const override
@@ -82,8 +82,8 @@ class output_file_or_stdout_validator : public sharg::output_file_validator
 {
 private:
     using base_t = sharg::output_file_validator;
-public:
 
+public:
     using base_t::base_t;
 
     virtual void operator()(std::filesystem::path const & file) const override

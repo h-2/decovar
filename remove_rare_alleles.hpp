@@ -33,7 +33,6 @@ struct filter_vectors_t
     std::vector<int /*bool*/> G;
 };
 
-
 inline void determine_filtered_alleles(record_t::info_t const & record_info,
                                        size_t const             record_no,
                                        size_t const             n_alts,
@@ -52,19 +51,21 @@ inline void determine_filtered_alleles(record_t::info_t const & record_info,
         {
             if (!std::holds_alternative<std::vector<float>>(value))
             {
-                throw decovar_error{"[Record no: {}] AF field of multi-allelic record wasn't "
-                              "vector<float>.",
-                              record_no};
+                throw decovar_error{
+                  "[Record no: {}] AF field of multi-allelic record wasn't "
+                  "vector<float>.",
+                  record_no};
             }
 
             std::vector<float> const & afs = std::get<std::vector<float>>(value);
             if (afs.size() != n_alts)
             {
-                throw decovar_error{"[Record no: {}] AF field of multi-allelic record has wrong "
-                              "size: {}, but {} was expected.",
-                              record_no,
-                              afs.size(),
-                              n_alts};
+                throw decovar_error{
+                  "[Record no: {}] AF field of multi-allelic record has wrong "
+                  "size: {}, but {} was expected.",
+                  record_no,
+                  afs.size(),
+                  n_alts};
             }
 
             for (size_t i = 0; i < n_alts; ++i)
@@ -132,12 +133,13 @@ inline void update_infos(record_t::info_t &       record_info, //← in-out para
           {
               if (vec.size() != selected_filter_vector.size())
               {
-                  throw decovar_error{"[Record no: {}] Expected {} elements in field {}, but got {}. A single '.' "
-                                      "as placeholder is currently not supported.",
-                                      selected_filter_vector.size(),
-                                      id,
-                                      vec.size(),
-                                      record_no};
+                  throw decovar_error{
+                    "[Record no: {}] Expected {} elements in field {}, but got {}. A single '.' "
+                    "as placeholder is currently not supported.",
+                    selected_filter_vector.size(),
+                    id,
+                    vec.size(),
+                    record_no};
               }
 
               remove_by_indexes(vec, selected_filter_vector);
@@ -189,9 +191,10 @@ inline void update_genotypes(record_t::genotypes_t &  record_genotypes, //← in
 
               if (vec.concat_size() != n_samples * n_alleles_before)
               {
-                  throw decovar_error{"[Record no: {}] Currently, every sample must be diploid and must contain the "
-                                      "the correct number of values (e.g. no single '.' placeholder allowed).",
-                                      record_no};
+                  throw decovar_error{
+                    "[Record no: {}] Currently, every sample must be diploid and must contain the "
+                    "the correct number of values (e.g. no single '.' placeholder allowed).",
+                    record_no};
               }
 
               std::pair raw_data = vec.raw_data();
@@ -234,16 +237,13 @@ inline void update_genotypes(record_t::genotypes_t &  record_genotypes, //← in
 }
 
 // returns true if all alleles were removed and the entire record should be skipped
-[[nodiscard]]
-inline bool remove_rare_alleles(record_t & record,
-                                size_t const record_no,
-                                header_t const & hdr,
-                                program_options const & opts,
-                                filter_vectors_t & filter_vectors)
+[[nodiscard]] inline bool remove_rare_alleles(record_t &              record,
+                                              size_t const            record_no,
+                                              header_t const &        hdr,
+                                              program_options const & opts,
+                                              filter_vectors_t &      filter_vectors)
 {
     size_t n_alts = record.alt.size();
-
-    log(opts, "record no {} is muli-allelic and will be processed.\n", record_no);
 
     determine_filtered_alleles(record.info, record_no, n_alts, opts, filter_vectors);
 
