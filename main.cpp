@@ -131,6 +131,7 @@ void decovar(program_options const & opts)
         if (new_hdr.string_to_format_pos().contains("PL") && !new_hdr.string_to_format_pos().contains("LPL"))
             new_hdr.formats.push_back(bio::io::var::reserved_formats.at("LPL"));
 
+        new_hdr.add_missing();
         writer.set_header(std::move(new_hdr));
     }
     else // just use existing header as-is
