@@ -74,6 +74,23 @@ inline double PL_to_prob(int32_t const PL_val)
     return std::pow(10.0, static_cast<double>(PL_val) / -10.0);
 }
 
+template <typename T>
+inline void concatenated_sequences_create_scaffold(bio::ranges::concatenated_sequences<T> & concat_seqs,
+                                                   size_t const                             outer_size,
+                                                   size_t const                             inner_size)
+{
+    concat_seqs.clear();
+    auto && [data_vec, data_delim] = concat_seqs.raw_data();
+
+    data_vec.resize(outer_size * inner_size);
+
+    data_delim.resize(outer_size + 1ul);
+    for (size_t i = 0; i < data_delim.size(); ++i)
+        data_delim[i] = i * inner_size;
+
+    assert(data_delim.back() == data_vec.size());
+}
+
 template <typename int_t>
 inline void determine_laa(localise_cache_t &                                              cache,
                           bio::ranges::concatenated_sequences<std::vector<int_t>> const & PLs,
@@ -101,9 +118,9 @@ inline void determine_laa(localise_cache_t &                                    
     for (std::span<int_t const> const sample_PLs : PLs)
     {
         cache.probs_buf.clear();
-        cache.probs_buf.resize(sample_PLs.size());
+        cache.probs_buf.resize(n_alts + 1);
 
-        for (size_t i = 0; i < L; ++i)
+        for (size_t i = 0; i < cache.probs_buf.size(); ++i)
             cache.probs_buf[i].second = i;
 
         for (size_t b = 0; b <= n_alts; ++b)
@@ -118,11 +135,20 @@ inline void determine_laa(localise_cache_t &                                    
             }
         }
 
-        std::ranges::sort(cache.probs_buf.begin() + 1, // +1 because REF is always first
+        // we sort all (except REF allele) by probability
+        std::ranges::sort(cache.probs_buf.begin() + 1,
                           cache.probs_buf.end(),
-                          std::ranges::greater{});
+                          std::ranges::greater{},
+                          [](auto && pair) { return pair.first; });
 
-        laa.push_back(cache.probs_buf | std::views::elements<1> | std::views::take(L));
+        // now we sort the first L + 1 by their index again
+        std::ranges::sort(cache.probs_buf.begin(),
+                          cache.probs_buf.begin() + L + 1,
+                          std::ranges::less{},
+                          [](auto && pair) { return pair.second; }); // it should be possible to do this nicer
+
+        // 0 (the REF position) is not copied to much dismay; only the next L
+        laa.push_back(cache.probs_buf | std::views::elements<1> | bio::views::slice(1, L + 1));
         //NOTE, this is likely not the most efficient solution
     }
 
@@ -180,12 +206,13 @@ inline void localise_alleles(record_t &              record,
               auto & buffer = cache.get_buf<int_t>();
               buffer.clear();
               buffer.reserve(n_samples);
-              buffer.concat_reserve(n_samples * L);
+              buffer.concat_reserve(n_samples * (L + 1));
 
               assert(field_AD.size() == cache.laa.size());
               for (auto const && [sample_AD, sample_laa] : bio::views::zip(field_AD, cache.laa))
               {
-                  buffer.push_back(); // append empty
+                  buffer.push_back();                   // append empty
+                  buffer.push_back_inner(sample_AD[0]); // reference is always appended
                   for (int32_t i : sample_laa)
                       buffer.push_back_inner(sample_AD[i]);
               }
@@ -204,10 +231,61 @@ inline void localise_alleles(record_t &              record,
     }
 
     /* LGT */
-    // TODO
+    // TODO what is the point of this?
 
     /* LPL */
-    // TODO
+    if (auto it = field_ids.find("PL"); it != field_ids.end())
+    {
+        auto visitor = bio::meta::overloaded{
+          [&]<std::integral int_t>(bio::ranges::concatenated_sequences<std::vector<int_t>> & field_PL)
+          {
+              // correct size of PL was already checked above
+
+              auto & buffer = cache.get_buf<int_t>();
+              concatenated_sequences_create_scaffold(buffer, n_samples, bio::io::var::detail::vcf_gt_formula(L, L) + 1);
+
+              for (size_t i = 0; i < n_samples; ++i)
+              {
+                  std::span<int32_t const> sample_LAA = cache.laa[i];
+                  std::span<int_t const>   sample_PL  = field_PL[i];
+                  std::span<int_t>         sample_LPL = buffer[i];
+
+                  assert(sample_PL.size() == bio::io::var::detail::vcf_gt_formula(n_alts, n_alts) + 1);
+                  assert(sample_LPL.size() == bio::io::var::detail::vcf_gt_formula(L, L) + 1);
+
+                  /* NOTE normally we would loop over [0, L]
+                   * however, the sample_LAA does not contain 0 at position 0 (for the ref), it only has the
+                   * alternative alleles. So that's why we need to subtract 1 in the mapping and why we need
+                   * to create special cases for a=0 and/or b=0
+                   */
+                  sample_LPL[0] = sample_PL[0]; // formula(0,0) is 0 and REF is always preserved
+                  for (size_t b = 1; b <= L; ++b)
+                  {
+                      sample_LPL[bio::io::var::detail::vcf_gt_formula(0, b)] =
+                        sample_PL[bio::io::var::detail::vcf_gt_formula(0, sample_LAA[b - 1])];
+
+                      for (size_t a = 1; a <= b; ++a)
+                      {
+                          assert(bio::io::var::detail::vcf_gt_formula(a, b) < sample_LPL.size());
+                          assert(bio::io::var::detail::vcf_gt_formula(sample_LAA[a - 1], sample_LAA[b - 1]) <
+                                 sample_PL.size());
+                          sample_LPL[bio::io::var::detail::vcf_gt_formula(a, b)] =
+                            sample_PL[bio::io::var::detail::vcf_gt_formula(sample_LAA[a - 1], sample_LAA[b - 1])];
+                      }
+                  }
+              }
+
+              record.genotypes.emplace_back("LPL", std::move(buffer)); // create LPL field
+
+              if (opts.remove_global_alleles)
+                  buffer = std::move(field_PL); // salvage dynamic memory from field_AD since it will be removed later
+          },
+          [record_no](auto &) {
+              throw decovar_error{"[Record no: {}] LPL field was not a range of integers.", record_no};
+          }};
+
+        std::visit(visitor, record.genotypes[it->second].value);
+    }
 
     /* LAA */
     record.genotypes.emplace_back("LAA", std::move(cache.laa)); // this comes last, because cache.laa is used before
@@ -217,6 +295,6 @@ inline void localise_alleles(record_t &              record,
     {
         std::erase_if(record.genotypes,
                       [](decltype(record.genotypes[0]) genotype)
-                      { return genotype.id == "AD" || genotype.id == "GT" || genotype.id == "PL"; });
+                      { return genotype.id == "AD" /*|| genotype.id == "GT"*/ || genotype.id == "PL"; });
     }
 }

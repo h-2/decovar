@@ -126,8 +126,8 @@ void decovar(program_options const & opts)
             new_hdr.formats.push_back(bio::io::var::reserved_formats.at("LAA"));
         if (new_hdr.string_to_format_pos().contains("AD") && !new_hdr.string_to_format_pos().contains("LAD"))
             new_hdr.formats.push_back(bio::io::var::reserved_formats.at("LAD"));
-        if (new_hdr.string_to_format_pos().contains("GT") && !new_hdr.string_to_format_pos().contains("LGT"))
-            new_hdr.formats.push_back(bio::io::var::reserved_formats.at("LGT"));
+        // if (new_hdr.string_to_format_pos().contains("GT") && !new_hdr.string_to_format_pos().contains("LGT"))
+        //     new_hdr.formats.push_back(bio::io::var::reserved_formats.at("LGT"));
         if (new_hdr.string_to_format_pos().contains("PL") && !new_hdr.string_to_format_pos().contains("LPL"))
             new_hdr.formats.push_back(bio::io::var::reserved_formats.at("LPL"));
 
@@ -171,6 +171,9 @@ void decovar(program_options const & opts)
 
         /* finally write the (modified) record */
         writer.push_back(record);
+
+        /* salvage memory */
+        //TODO salvage localise_cache.laa
     }
 }
 
