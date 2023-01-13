@@ -298,3 +298,18 @@ inline void localise_alleles(record_t &              record,
                       { return genotype.id == "AD" /*|| genotype.id == "GT"*/ || genotype.id == "PL"; });
     }
 }
+
+void salvage_localise_cache(record_t & record, localise_cache_t & cache)
+{
+    // LPL and LAD have already been swapped with PL and AD, so they don't need to be salvaged
+
+    for (auto && [id, value] : record.genotypes)
+    {
+        if (id == "LAA")
+        {
+            auto & laa = std::get<bio::ranges::concatenated_sequences<std::vector<int32_t>>>(value);
+            cache.laa  = std::move(laa);
+            break;
+        }
+    }
+}

@@ -38,7 +38,7 @@ program_options parse_options(int const argc, char const * const * const argv)
 {
     program_options opts;
 
-    sharg::parser parser{"deCoVar", argc, argv};
+    sharg::parser parser{"deCoVar", argc, argv, sharg::update_notifications::off};
     parser.info.author            = "Hannes Hauswedell";
     parser.info.short_description = "deCODE variant tools.";
     parser.info.version           = "0.1.0";
@@ -173,7 +173,8 @@ void decovar(program_options const & opts)
         writer.push_back(record);
 
         /* salvage memory */
-        //TODO salvage localise_cache.laa
+        if (record.alt.size() > opts.local_alleles && opts.local_alleles != 0)
+            salvage_localise_cache(record, localise_cache);
     }
 }
 
