@@ -1,12 +1,12 @@
 # deCoVar – the 𝐝𝐞𝐂𝐎DE 𝐯𝐚𝐫iant tools
 
-A application with multiple sub-programs that perform useful transformations, filters, etc. on VCF/BCF files.
+An application with multiple sub-programs that perform useful transformations, filters, etc. on VCF/BCF files.
 Developed at deCODE genetics to fill-in gaps of bcftools.
 
 ## Sub-programs
 
-* `allele_shrink`: reduce the size impact of multiallelic records by removing rare alleles and/or replacing the `PL`
-field with
+* `allele`: reduce the size impact of multiallelic records by removing rare alleles and/or replacing the `PL`
+and `AD` fields with `LPL` and `LAD` (smaller, locally relevant fields).
 
 ## Notable differences to BCFtools
 
@@ -19,7 +19,7 @@ field with
 We recommed using a package from the [releases page](./releases).
 
 <details>
-<summary>Cloning and building from source</summary>
+<summary>Cloning and building from source *(click to expand)* </summary>
 
 <p>
 

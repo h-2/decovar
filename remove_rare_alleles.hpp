@@ -22,6 +22,9 @@
 
 #pragma once
 
+#include <ranges>
+#include <bio/ranges/container/concatenated_sequences.hpp>
+
 #include "misc.hpp"
 
 /* vectors for fields of multiplicity A, R or G indicating whether that value at the positions shall be removed(1)
@@ -31,6 +34,8 @@ struct filter_vectors_t
     std::vector<int /*bool*/> A;
     std::vector<int /*bool*/> R;
     std::vector<int /*bool*/> G;
+
+    std::vector<std::pair<size_t, size_t>> formula_reverse_cache;
 };
 
 inline void determine_filtered_alleles(record_t::info_t const & record_info,
@@ -88,7 +93,8 @@ inline void determine_filtered_alleles(record_t::info_t const & record_info,
     std::ranges::copy(filter_vectors.R.begin() + 1, filter_vectors.R.end(), filter_vectors.A.begin());
 
     /* filtered alleles G */
-    filter_vectors.G.resize(bio::io::var::detail::vcf_gt_formula(n_alts, n_alts) + 1);
+    size_t const gt_size = bio::io::var::detail::vcf_gt_formula(n_alts, n_alts) + 1;
+    filter_vectors.G.resize(gt_size);
     for (size_t b = 0; b <= n_alts; ++b)
     {
         for (size_t a = 0; a <= b; ++a)
@@ -96,6 +102,15 @@ inline void determine_filtered_alleles(record_t::info_t const & record_info,
             assert(bio::io::var::detail::vcf_gt_formula(a, b) < filter_vectors.G.size());
             filter_vectors.G[bio::io::var::detail::vcf_gt_formula(a, b)] = filter_vectors.R[a] || filter_vectors.R[b];
         }
+    }
+
+    /* formula_reverse_cache */
+    if (filter_vectors.formula_reverse_cache.size() < gt_size)
+    {
+        filter_vectors.formula_reverse_cache.resize(gt_size);
+        for (size_t b = 0; b <= n_alts; ++b)
+            for (size_t a = 0; a <= b; ++a)
+                filter_vectors.formula_reverse_cache[bio::io::var::detail::vcf_gt_formula(a, b)] = {a, b};
     }
 }
 
@@ -184,9 +199,9 @@ inline void update_genotypes(record_t::genotypes_t &  record_genotypes, //← in
           },
           [&]<typename T>(bio::ranges::concatenated_sequences<std::vector<T>> & vec)
           {
-              size_t n_samples        = vec.size();
-              size_t n_alleles_before = selected_filter_vector.size();
-              size_t n_alleles_after =
+              size_t const n_samples        = vec.size();
+              size_t const n_alleles_before = selected_filter_vector.size();
+              size_t const n_alleles_after =
                 n_alleles_before - std::accumulate(selected_filter_vector.begin(), selected_filter_vector.end(), 0ul);
 
               if (vec.concat_size() != n_samples * n_alleles_before)
@@ -214,6 +229,17 @@ inline void update_genotypes(record_t::genotypes_t &  record_genotypes, //← in
                   raw_data.second[i] = i * n_alleles_after;
               }
               assert(raw_data.second.back() == raw_data.first.size());
+
+              if (id == "PL") // PL values are renormalised, so the smallest PL value is 0
+              {
+                  for (std::span<T> const sample_PL : vec)
+                  {
+                      T const min = *std::ranges::min_element(sample_PL);
+                      if (min > 0)
+                          for (T & PL_value : sample_PL)
+                              PL_value -= min;
+                  }
+              }
           }};
 
         switch (format.number)
@@ -234,6 +260,47 @@ inline void update_genotypes(record_t::genotypes_t &  record_genotypes, //← in
                 break;
         }
     }
+}
+
+
+inline void fix_GT(record_t::genotypes_t &  record_genotypes, //← in-out parameter
+                   size_t const             record_no,
+                   filter_vectors_t const & filter_vectors)
+{
+
+    std::span<std::string> all_GT{};
+
+    for (auto && [id, value] : record_genotypes)
+        if (id == "GT")
+            all_GT = std::get<std::vector<std::string>>(value), ({break;});
+
+    if (all_GT.empty()) // no GT field present
+        return;
+
+    auto visitor = bio::meta::overloaded{
+          [&](auto) {
+              throw decovar_error{"[Record no: {}] Expected a vector when reading PL.", record_no};
+          },
+          [&]<typename T>(bio::ranges::concatenated_sequences<std::vector<T>> & vec)
+          {
+              for (size_t i = 0; i < vec.size(); ++i)
+              {
+                  std::span<T const> const sample_PL = vec[i];
+                  std::string & sample_GT = all_GT[i];
+
+                  size_t const i_min = std::ranges::min_element(sample_PL) - sample_PL.begin();
+
+                  auto [a, b] = filter_vectors.formula_reverse_cache[i_min];
+                  sample_GT.clear();
+                  fmt::format_to(std::back_inserter(sample_GT), "{}/{}", a, b); // always unphased
+              }
+
+          }};
+
+    for (auto && [id, value] : record_genotypes)
+        if (id == "PL")
+            std::visit(visitor, value), ({break;});
+
 }
 
 // returns true if all alleles were removed and the entire record should be skipped
@@ -267,6 +334,9 @@ inline void update_genotypes(record_t::genotypes_t &  record_genotypes, //← in
 
         /* update genotypes */
         update_genotypes(record.genotypes, hdr, record_no, filter_vectors);
+
+        /* fix GT values after alleles have been removed */
+        fix_GT(record.genotypes, record_no, filter_vectors);
     }
 
     return false;
