@@ -61,7 +61,7 @@ if (CLANG_FORMAT STREQUAL "CLANG_FORMAT-NOTFOUND")
 endif()
 
 if (NOT CLANG_FORMAT STREQUAL "CLANG_FORMAT-NOTFOUND")
-    add_custom_target (check_format ALL "find" "${CMAKE_CURRENT_SOURCE_DIR}/src" "-name" "'*.[ch]pp'" "-exec"
+    add_custom_target (check_format "find" "${CMAKE_CURRENT_SOURCE_DIR}/src" "-name" "'*.[ch]pp'" "-exec"
                        ${CLANG_FORMAT} "-style=file" "-n" "-Werror" "{}" "+"
                        COMMENT "Checking the source-code with clang-format.")
 

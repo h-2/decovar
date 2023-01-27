@@ -36,6 +36,7 @@
 #include "../misc.hpp"
 #include "localise.hpp"
 #include "remove_rare.hpp"
+#include "sharg/validators.hpp"
 
 program_options parse_options(sharg::parser & parser)
 {
@@ -59,7 +60,23 @@ program_options parse_options(sharg::parser & parser)
                                                                        {"vcf", "vcf.gz", "bcf"}}
     });
 
-    parser.add_subsection("Algorithm:");
+    parser.add_option(opts.output_file_type,
+                      sharg::config{
+                        .short_id    = 'O',
+                        .long_id     = "output-type",
+                        .description = "Output compressed BCF (b), uncompressed BCF (u), compressed VCF (z), "
+                                       "uncompressed VCF (v); or use automatic (a) detection. Use the -Ou option "
+                                       "when piping between subcommands to speed up performance by removing "
+                                       "unnecessary compression/decompression and VCF←→BCF conversion.",
+                        .validator   = sharg::value_list_validator{'a', 'b', 'u', 'z', 'v'}
+    });
+
+    parser.add_subsection("Remove rare alleles:");
+    parser.add_line(
+      "Allows removing certain alleles from multi-allelic records. All fields with A, R or G multiplicity"
+      " have the respective elements removed. The GT field is updated to contain the new indexes.",
+      true);
+
     parser.add_option(opts.rare_af_threshold,
                       sharg::config{
                         .long_id     = "rare-af-thresh",
@@ -67,6 +84,16 @@ program_options parse_options(sharg::parser & parser)
                                        "0 → remove none.",
                         .validator   = sharg::arithmetic_range_validator{0.0, 1.0}
     });
+
+    parser.add_subsection("Allele localisation:");
+
+    parser.add_line(
+      "Determine the \"locally relevant\" alleles per sample (using the PL-field) and store their "
+      "indexes in the newly added LAA-field. Note that the reference allele "
+      "denoted by 0 is always considered locally relevant without being listed in LAA.\n"
+      "The PL field and AD field are then renamed to LPL and LAD and subsampled to only contain "
+      "information for the local alleles.",
+      true);
 
     parser.add_option(opts.local_alleles,
                       sharg::config{
@@ -77,9 +104,16 @@ program_options parse_options(sharg::parser & parser)
                         .validator   = sharg::arithmetic_range_validator{0, 127}
     });
 
-    parser.add_option(opts.remove_global_alleles,
-                      sharg::config{.long_id     = "remove-global-alleles",
-                                    .description = "Remove global alleles for whome local alleles have been created."});
+    parser.add_option(opts.keep_global_fields,
+                      sharg::config{.long_id     = "keep-global-fields",
+                                    .description = "If set, PL and AD fields are kept in addition to LPL and LAD."});
+
+    parser.add_option(opts.transform_all,
+                      sharg::config{.long_id     = "transform-all",
+                                    .description = "If set, records with fewer than L alleles will still get an "
+                                                   "LAA-field and have their PL/AD renamed to LPL/LAD. This increases "
+                                                   "file size and provides no advantage other than enabling same "
+                                                   "FORMATs for all records."});
 
     parser.add_subsection("Performance:");
     parser.add_option(opts.threads,
@@ -110,12 +144,7 @@ void allele(sharg::parser & parser)
                                                            : bio::io::var::reader{opts.input_file, reader_opts};
 
     /* setup writer */
-    bio::io::var::writer_options writer_opts{.stream_options =
-                                               bio::io::transparent_ostream_options{.threads = writer_threads + 1}};
-
-    bio::io::var::writer writer = (opts.output_file == "-")
-                                    ? bio::io::var::writer{std::cout, bio::io::vcf{}, writer_opts}
-                                    : bio::io::var::writer{opts.output_file, writer_opts};
+    bio::io::var::writer writer = create_writer(opts.output_file, opts.output_file_type, writer_threads);
 
     /* setup header */
     if (opts.local_alleles > 0ul) // we need to create a new header
@@ -162,18 +191,27 @@ void allele(sharg::parser & parser)
         }
 
         /* localise alleles */
-        if (record.alt.size() > opts.local_alleles && opts.local_alleles != 0)
+        if (opts.local_alleles != 0)
         {
-            log(opts, "↓ record no {} allelle-localisation begin.\n", record_no);
-            localise_alleles(record, record_no, hdr, opts, localise_cache);
-            log(opts, "↑ record no {} allelle-localisation end.\n", record_no);
+            if (record.alt.size() > opts.local_alleles)
+            {
+                log(opts, "↓ record no {} allelle-localisation begin.\n", record_no);
+                localise_alleles(record, record_no, hdr, opts, localise_cache);
+                log(opts, "↑ record no {} allelle-localisation end.\n", record_no);
+            }
+            else if (opts.transform_all)
+            {
+                log(opts, "↓ record no {} allelle-pseudo-localisation begin.\n", record_no);
+                pseudo_localise_alleles(record, record_no, hdr, opts, localise_cache);
+                log(opts, "↑ record no {} allelle-pseudo-localisation end.\n", record_no);
+            }
         }
 
         /* finally write the (modified) record */
         writer.push_back(record);
 
         /* salvage memory */
-        if (record.alt.size() > opts.local_alleles && opts.local_alleles != 0)
+        if (opts.local_alleles != 0 && ((record.alt.size() > opts.local_alleles) || opts.transform_all))
             salvage_localise_cache(record, localise_cache);
     }
 }

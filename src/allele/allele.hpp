@@ -32,12 +32,14 @@ void allele(sharg::parser & sub_parser);
 
 struct program_options
 {
-    std::string input_file;
-    std::string output_file = "-";
+    std::filesystem::path input_file;
+    std::filesystem::path output_file      = "-";
+    char                  output_file_type = 'a';
 
-    float  rare_af_threshold     = 0ul;
-    size_t local_alleles         = 0ul;
-    bool   remove_global_alleles = true;
+    float  rare_af_threshold  = 0ul;
+    size_t local_alleles      = 0ul;
+    bool   keep_global_fields = false;
+    bool   transform_all      = false;
 
     size_t threads = std::max<size_t>(2, std::min<size_t>(8, std::thread::hardware_concurrency()));
 

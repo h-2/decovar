@@ -23,8 +23,11 @@
 #pragma once
 
 #include <bio/alphabet/fmt.hpp>
+#include <bio/io/format/vcf.hpp>
+#include <bio/io/stream/compression.hpp>
 #include <bio/io/var/header.hpp>
 #include <bio/io/var/record.hpp>
+#include <bio/io/var/writer.hpp>
 
 #include <sharg/all.hpp>
 
@@ -78,3 +81,46 @@ public:
             sharg::output_file_validator::operator()(file);
     }
 };
+
+// TODO we need to move more of this into bioc++
+inline auto create_writer(std::filesystem::path const & filename, char format, size_t const threads)
+{
+    bool to_stdout = filename == "-" || filename == "/dev/stdout";
+
+    if (to_stdout && format == 'a')
+        format = 'v';
+
+    bio::io::var::writer_options writer_opts{.stream_options =
+                                               bio::io::transparent_ostream_options{.threads = threads + 1}};
+
+    std::variant<bio::io::bcf, bio::io::vcf> var;
+
+    switch (format)
+    {
+        case 'a':
+            return bio::io::var::writer{filename, writer_opts};
+        case 'b':
+            var                                    = bio::io::bcf{};
+            writer_opts.stream_options.compression = bio::io::compression_format::bgzf;
+            break;
+        case 'u':
+            var                                    = bio::io::bcf{};
+            writer_opts.stream_options.compression = bio::io::compression_format::none;
+            break;
+        case 'z':
+            var                                    = bio::io::vcf{};
+            writer_opts.stream_options.compression = bio::io::compression_format::bgzf;
+            break;
+        case 'v':
+            var                                    = bio::io::vcf{};
+            writer_opts.stream_options.compression = bio::io::compression_format::none;
+            break;
+        default:
+            BIOCPP_UNREACHABLE;
+    }
+
+    if (to_stdout)
+        return bio::io::var::writer{std::cout, var, writer_opts};
+    else
+        return bio::io::var::writer{filename, var, writer_opts};
+}

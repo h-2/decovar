@@ -158,19 +158,21 @@ inline void determine_laa(localise_cache_t &                                    
     log(opts, "Index map: {}\n", laa);
 }
 
-// returns true if all alleles were removed and the entire record should be skipped
 inline void localise_alleles(record_t &              record,
                              size_t const            record_no,
                              header_t const &        hdr,
                              program_options const & opts,
                              localise_cache_t &      cache)
 {
-    size_t const n_alts    = record.alt.size();
+#ifndef NDEBUG
+    size_t const n_alts = record.alt.size();
+#endif
     size_t const n_samples = hdr.column_labels.size() - 9;
     size_t const L         = opts.local_alleles;
     assert(n_alts > L);
 
     // TODO the following can be replaced once we have bio::ranges::dictionary
+    record.genotypes.reserve(record.genotypes.size() + 3);
     std::unordered_map<std::string_view, size_t> field_ids;
     for (size_t i = 0; i < record.genotypes.size(); ++i)
         field_ids[record.genotypes[i].id] = i;
@@ -221,7 +223,7 @@ inline void localise_alleles(record_t &              record,
 
               record.genotypes.emplace_back("LAD", std::move(buffer)); // create LAD field
 
-              if (opts.remove_global_alleles)
+              if (!opts.keep_global_fields)
                   buffer = std::move(field_AD); // salvage dynamic memory from field_AD since it will be removed later
           },
           [record_no](auto &) {
@@ -278,7 +280,7 @@ inline void localise_alleles(record_t &              record,
 
               record.genotypes.emplace_back("LPL", std::move(buffer)); // create LPL field
 
-              if (opts.remove_global_alleles)
+              if (!opts.keep_global_fields)
                   buffer = std::move(field_PL); // salvage dynamic memory from field_AD since it will be removed later
           },
           [record_no](auto &) {
@@ -292,12 +294,62 @@ inline void localise_alleles(record_t &              record,
     record.genotypes.emplace_back("LAA", std::move(cache.laa)); // this comes last, because cache.laa is used before
 
     /* remove AD, GT, PL */
-    if (opts.remove_global_alleles)
+    if (!opts.keep_global_fields)
     {
         std::erase_if(record.genotypes,
                       [](decltype(record.genotypes[0]) genotype)
                       { return genotype.id == "AD" /*|| genotype.id == "GT"*/ || genotype.id == "PL"; });
     }
+}
+
+// this is called if want to declare all alleles as local alleles
+inline void pseudo_localise_alleles(record_t &              record,
+                                    size_t const            record_no,
+                                    header_t const &        hdr,
+                                    program_options const & opts,
+                                    localise_cache_t &      cache)
+{
+    size_t const n_alts    = record.alt.size();
+    size_t const n_samples = hdr.column_labels.size() - 9;
+
+    // TODO the following can be replaced once we have bio::ranges::dictionary
+    record.genotypes.reserve(record.genotypes.size() + 3);
+    std::unordered_map<std::string_view, size_t> field_ids;
+    for (size_t i = 0; i < record.genotypes.size(); ++i)
+        field_ids[record.genotypes[i].id] = i;
+
+    for (std::string_view id : {"LAA", "LAD", "LGT", "LPL"})
+        if (field_ids.contains(id))
+            throw decovar_error{"[Record no: {}] Cannot add {} field, because {} field already present.",
+                                record_no,
+                                id,
+                                id};
+
+    /* LAD */
+    if (auto it = field_ids.find("AD"); it != field_ids.end())
+    {
+        if (opts.keep_global_fields) // copy
+            record.genotypes.emplace_back("LAD", record.genotypes[it->second].value);
+        else // rename
+            record.genotypes[it->second].id = "LAD";
+    }
+
+    /* LPL */
+    if (auto it = field_ids.find("PL"); it != field_ids.end())
+    {
+        if (opts.keep_global_fields) // copy
+            record.genotypes.emplace_back("LPL", record.genotypes[it->second].value);
+        else // rename
+            record.genotypes[it->second].id = "LPL";
+    }
+
+    /* LAA */
+    concatenated_sequences_create_scaffold(cache.laa, n_samples, n_alts);
+    auto && [data, delim] = cache.laa.raw_data();
+    data[0]               = 1;
+    for (size_t i = 1; i <= cache.laa.concat_size(); ++i)
+        data[i] = static_cast<int32_t>((i % n_alts) + 1);
+    record.genotypes.emplace_back("LAA", std::move(cache.laa));
 }
 
 void salvage_localise_cache(record_t & record, localise_cache_t & cache)
