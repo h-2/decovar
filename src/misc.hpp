@@ -22,11 +22,11 @@
 
 #pragma once
 
-#include <sharg/all.hpp>
-
 #include <bio/alphabet/fmt.hpp>
 #include <bio/io/var/header.hpp>
 #include <bio/io/var/record.hpp>
+
+#include <sharg/all.hpp>
 
 using record_t = bio::io::var::record_default;
 using header_t = bio::io::var::header;
@@ -38,8 +38,6 @@ struct decovar_error : std::runtime_error
       std::runtime_error{fmt::format(format, std::forward<T>(args)...)}
     {}
 };
-
-
 
 template <typename opts_t, typename... T>
 inline void log(opts_t const & opts, fmt::format_string<T...> format, T &&... args)

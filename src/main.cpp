@@ -1,9 +1,10 @@
 
-#include <sharg/all.hpp>
 #include <iostream>
 
-#include "misc.hpp"
+#include <sharg/all.hpp>
+
 #include "allele/allele.hpp"
+#include "misc.hpp"
 
 int main(int argc, char ** argv)
 {
@@ -14,7 +15,6 @@ int main(int argc, char ** argv)
     parser.info.short_description = "deCODE variant tools.";
     parser.info.version           = "0.1.0";
     //TODO add description
-
 
 #ifdef NDEBUG
     try

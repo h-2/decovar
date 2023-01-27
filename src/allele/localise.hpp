@@ -25,13 +25,12 @@
 #include <cstdint>
 #include <ranges>
 
+#include <bio/io/var/record.hpp>
 #include <bio/ranges/container/concatenated_sequences.hpp>
 #include <bio/ranges/views/zip.hpp>
 
-#include <bio/io/var/record.hpp>
-
-#include "allele.hpp"
 #include "../misc.hpp"
+#include "allele.hpp"
 
 struct localise_cache_t
 {

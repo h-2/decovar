@@ -20,19 +20,21 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
+#include "allele.hpp"
+
 #include <cstddef>
-#include <sharg/all.hpp>
 #include <variant>
 
 #include <bio/io/exception.hpp>
 #include <bio/io/var/header.hpp>
+#include <bio/io/var/misc.hpp>
 #include <bio/io/var/reader.hpp>
 #include <bio/io/var/writer.hpp>
-#include <bio/io/var/misc.hpp>
 
-#include "allele.hpp"
-#include "localise.hpp"
+#include <sharg/all.hpp>
+
 #include "../misc.hpp"
+#include "localise.hpp"
 #include "remove_rare.hpp"
 
 program_options parse_options(sharg::parser & parser)
@@ -116,7 +118,7 @@ void allele(sharg::parser & parser)
                                     : bio::io::var::writer{opts.output_file, writer_opts};
 
     /* setup header */
-    if (opts.local_alleles > 0ul)                       // we need to create a new header
+    if (opts.local_alleles > 0ul) // we need to create a new header
     {
         bio::io::var::header new_hdr = reader.header(); // create copy
 
