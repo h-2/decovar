@@ -28,20 +28,16 @@
 #include <bio/io/var/header.hpp>
 #include <bio/io/var/reader.hpp>
 #include <bio/io/var/writer.hpp>
+#include <bio/io/var/misc.hpp>
 
-#include "bio/io/var/misc.hpp"
-#include "localise_alleles.hpp"
-#include "misc.hpp"
-#include "remove_rare_alleles.hpp"
+#include "allele.hpp"
+#include "localise.hpp"
+#include "../misc.hpp"
+#include "remove_rare.hpp"
 
-program_options parse_options(int const argc, char const * const * const argv)
+program_options parse_options(sharg::parser & parser)
 {
     program_options opts;
-
-    sharg::parser parser{"deCoVar", argc, argv, sharg::update_notifications::off};
-    parser.info.author            = "Hannes Hauswedell";
-    parser.info.short_description = "deCODE variant tools.";
-    parser.info.version           = "0.1.0";
 
     parser.add_flag(
       opts.verbose,
@@ -96,8 +92,10 @@ program_options parse_options(int const argc, char const * const * const argv)
     return opts;
 }
 
-void decovar(program_options const & opts)
+void allele(sharg::parser & parser)
 {
+    program_options opts = parse_options(parser);
+
     size_t threads        = opts.threads - 1; // subtract one for the main thread
     size_t reader_threads = threads / 3;
     size_t writer_threads = threads - reader_threads;
@@ -176,36 +174,4 @@ void decovar(program_options const & opts)
         if (record.alt.size() > opts.local_alleles && opts.local_alleles != 0)
             salvage_localise_cache(record, localise_cache);
     }
-}
-
-int main(int argc, char ** argv)
-{
-    std::ios::sync_with_stdio(false);
-
-#ifndef NDEBUG
-    program_options o = parse_options(argc, argv);
-    decovar(o);
-#else
-    try
-    {
-        program_options o = parse_options(argc, argv);
-        decovar(o);
-    }
-    catch (sharg::parser_error const & ext)
-    {
-        fmt::print(stderr, "[Parsing error] {}\n", ext.what());
-        return -1;
-    }
-    catch (bio::io::bio_error const & ext)
-    {
-        fmt::print(stderr, "[BioC++ I/O error] {}\n", ext.what());
-        return -1;
-    }
-    catch (decovar_error const & ext)
-    {
-        fmt::print(stderr, "[deCoVar error] {}\n", ext.what());
-        return -1;
-    }
-#endif
-    return 0;
 }

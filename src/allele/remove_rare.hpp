@@ -23,9 +23,11 @@
 #pragma once
 
 #include <ranges>
+#include <variant>
 #include <bio/ranges/container/concatenated_sequences.hpp>
 
-#include "misc.hpp"
+#include "allele.hpp"
+#include "../misc.hpp"
 
 /* vectors for fields of multiplicity A, R or G indicating whether that value at the positions shall be removed(1)
 * or not (0) */

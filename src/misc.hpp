@@ -23,8 +23,8 @@
 #pragma once
 
 #include <sharg/all.hpp>
-#include <thread>
 
+#include <bio/alphabet/fmt.hpp>
 #include <bio/io/var/header.hpp>
 #include <bio/io/var/record.hpp>
 
@@ -39,22 +39,10 @@ struct decovar_error : std::runtime_error
     {}
 };
 
-struct program_options
-{
-    std::string input_file;
-    std::string output_file = "-";
 
-    float  rare_af_threshold     = 0ul;
-    size_t local_alleles         = 0ul;
-    bool   remove_global_alleles = true;
 
-    size_t threads = std::max<size_t>(2, std::min<size_t>(8, std::thread::hardware_concurrency()));
-
-    bool verbose = false;
-};
-
-template <typename... T>
-inline void log(program_options const & opts, fmt::format_string<T...> format, T &&... args)
+template <typename opts_t, typename... T>
+inline void log(opts_t const & opts, fmt::format_string<T...> format, T &&... args)
 {
     if (opts.verbose)
     {

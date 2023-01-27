@@ -76,7 +76,7 @@ IncludeBlocks: Regroup
 IncludeCategories:
   - Regex:           '^".*\.hpp"'
     Priority:        20
-  - Regex:           '^<bio/io'
+  - Regex:           '^<sharg'
     Priority:        10
   - Regex:           '^<bio/'
     Priority:        9
