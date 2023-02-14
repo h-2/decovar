@@ -40,6 +40,7 @@ struct program_options
     size_t local_alleles      = 0ul;
     bool   keep_global_fields = false;
     bool   transform_all      = false;
+    size_t split_by_length    = 0ul;
 
     size_t threads = std::max<size_t>(2, std::min<size_t>(8, std::thread::hardware_concurrency()));
 

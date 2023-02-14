@@ -35,8 +35,8 @@
 
 #include "../misc.hpp"
 #include "localise.hpp"
-#include "remove_rare.hpp"
-#include "sharg/validators.hpp"
+#include "remove.hpp"
+#include "split.hpp"
 
 program_options parse_options(sharg::parser & parser)
 {
@@ -83,6 +83,18 @@ program_options parse_options(sharg::parser & parser)
                         .description = "For multi-allelic records, remove alleles with AF < than threshold. "
                                        "0 → remove none.",
                         .validator   = sharg::arithmetic_range_validator{0.0, 1.0}
+    });
+
+    parser.add_subsection("Divide alleles into multiple records:");
+
+    parser.add_line("Multi-allelic records are split into two or more with some alleles each.", true);
+
+    parser.add_option(opts.split_by_length,
+                      sharg::config{
+                        .long_id     = "split-by-length",
+                        .description = "Alleles shorter than this will stay in this record; longer "
+                                       "ones are moved into a separate one. 0 → no splitting.",
+                        .validator   = sharg::arithmetic_range_validator{0ul, 100'000ul}
     });
 
     parser.add_subsection("Allele localisation:");
@@ -171,9 +183,9 @@ void allele(sharg::parser & parser)
     bio::io::var::header const & hdr = writer.header();
 
     /* caches */
-    size_t           record_no = -1;
-    filter_vectors_t filter_vectors;
-    localise_cache_t localise_cache;
+    size_t             record_no = -1; // always refers to #record in input even if more records are created
+    _remove::cache_t   filter_vectors;
+    _localise::cache_t localise_cache;
 
     /* iterate */
     for (record_t & record : reader)
@@ -184,10 +196,33 @@ void allele(sharg::parser & parser)
         if (record.alt.size() > 1ul && opts.rare_af_threshold != 0.0)
         {
             log(opts, "↓ record no {} allelle-removal begin.\n", record_no);
-            bool all_alleles_removed = remove_rare_alleles(record, record_no, hdr, opts, filter_vectors);
+            bool all_alleles_removed = _remove::remove_rare_alleles(record, record_no, hdr, opts, filter_vectors);
             log(opts, "↑ record no {} allelle-removal end.\n", record_no);
             if (all_alleles_removed == true)
                 continue;
+        }
+
+        /* split */
+        if (opts.split_by_length > 0 && _split::needs_splitting(record, opts))
+        {
+            log(opts, "↓ record no {} splitting-by-length begin.\n", record_no);
+
+            /* create second record */
+            record_t record0 = record;
+            if (record0.id != ".")
+            {
+                record0.id += "_split1";
+                record.id += "_split2";
+            }
+
+            /* short alleles (remove gt) */
+            _split::remove_alleles(record0, record_no, _split::gt, hdr, opts, filter_vectors);
+            writer.push_back(record0); // TODO how do we apply subsequent transformations on this?
+
+            /* long alleles (remove leq) */
+            _split::remove_alleles(record, record_no, _split::leq, hdr, opts, filter_vectors);
+
+            log(opts, "↑ record no {} splitting-by-length end.\n", record_no);
         }
 
         /* localise alleles */
@@ -196,13 +231,13 @@ void allele(sharg::parser & parser)
             if (record.alt.size() > opts.local_alleles)
             {
                 log(opts, "↓ record no {} allelle-localisation begin.\n", record_no);
-                localise_alleles(record, record_no, hdr, opts, localise_cache);
+                _localise::localise_alleles(record, record_no, hdr, opts, localise_cache);
                 log(opts, "↑ record no {} allelle-localisation end.\n", record_no);
             }
             else if (opts.transform_all)
             {
                 log(opts, "↓ record no {} allelle-pseudo-localisation begin.\n", record_no);
-                pseudo_localise_alleles(record, record_no, hdr, opts, localise_cache);
+                _localise::pseudo_localise_alleles(record, record_no, hdr, opts, localise_cache);
                 log(opts, "↑ record no {} allelle-pseudo-localisation end.\n", record_no);
             }
         }
@@ -212,6 +247,6 @@ void allele(sharg::parser & parser)
 
         /* salvage memory */
         if (opts.local_alleles != 0 && ((record.alt.size() > opts.local_alleles) || opts.transform_all))
-            salvage_localise_cache(record, localise_cache);
+            _localise::salvage_cache(record, localise_cache);
     }
 }

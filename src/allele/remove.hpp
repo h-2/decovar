@@ -30,9 +30,12 @@
 #include "../misc.hpp"
 #include "allele.hpp"
 
+namespace _remove
+{
+
 /* vectors for fields of multiplicity A, R or G indicating whether that value at the positions shall be removed(1)
 * or not (0) */
-struct filter_vectors_t
+struct cache_t
 {
     std::vector<int /*bool*/> A;
     std::vector<int /*bool*/> R;
@@ -41,11 +44,40 @@ struct filter_vectors_t
     std::vector<std::pair<size_t, size_t>> formula_reverse_cache;
 };
 
-inline void determine_filtered_alleles(record_t::info_t const & record_info,
-                                       size_t const             record_no,
-                                       size_t const             n_alts,
-                                       program_options const &  opts,
-                                       filter_vectors_t &       filter_vectors) // <- out-param
+/* this needs to be run AFTER the filter-vector-R has been computed */
+inline void determine_filter_vector_AG(size_t const n_alts, cache_t & filter_vectors) // <- in-out-param
+{
+    /* filtered alleles A */
+    filter_vectors.A.resize(n_alts);
+    std::ranges::copy(filter_vectors.R.begin() + 1, filter_vectors.R.end(), filter_vectors.A.begin());
+
+    /* filtered alleles G */
+    size_t const gt_size = bio::io::var::detail::vcf_gt_formula(n_alts, n_alts) + 1;
+    filter_vectors.G.resize(gt_size);
+    for (size_t b = 0; b <= n_alts; ++b)
+    {
+        for (size_t a = 0; a <= b; ++a)
+        {
+            assert(bio::io::var::detail::vcf_gt_formula(a, b) < filter_vectors.G.size());
+            filter_vectors.G[bio::io::var::detail::vcf_gt_formula(a, b)] = filter_vectors.R[a] || filter_vectors.R[b];
+        }
+    }
+
+    /* formula_reverse_cache */
+    if (filter_vectors.formula_reverse_cache.size() < gt_size)
+    {
+        filter_vectors.formula_reverse_cache.resize(gt_size);
+        for (size_t b = 0; b <= n_alts; ++b)
+            for (size_t a = 0; a <= b; ++a)
+                filter_vectors.formula_reverse_cache[bio::io::var::detail::vcf_gt_formula(a, b)] = {a, b};
+    }
+}
+
+inline void determine_filter_vector_R(record_t::info_t const & record_info,
+                                      size_t const             record_no,
+                                      size_t const             n_alts,
+                                      program_options const &  opts,
+                                      cache_t &                filter_vectors) // <- out-param
 {
     bool has_AF = false;
 
@@ -90,31 +122,6 @@ inline void determine_filtered_alleles(record_t::info_t const & record_info,
         //TODO look for AC and AN and update those?
         throw decovar_error{"[Record no: {}] no AF field in record.", record_no};
     }
-
-    /* filtered alleles A */
-    filter_vectors.A.resize(n_alts);
-    std::ranges::copy(filter_vectors.R.begin() + 1, filter_vectors.R.end(), filter_vectors.A.begin());
-
-    /* filtered alleles G */
-    size_t const gt_size = bio::io::var::detail::vcf_gt_formula(n_alts, n_alts) + 1;
-    filter_vectors.G.resize(gt_size);
-    for (size_t b = 0; b <= n_alts; ++b)
-    {
-        for (size_t a = 0; a <= b; ++a)
-        {
-            assert(bio::io::var::detail::vcf_gt_formula(a, b) < filter_vectors.G.size());
-            filter_vectors.G[bio::io::var::detail::vcf_gt_formula(a, b)] = filter_vectors.R[a] || filter_vectors.R[b];
-        }
-    }
-
-    /* formula_reverse_cache */
-    if (filter_vectors.formula_reverse_cache.size() < gt_size)
-    {
-        filter_vectors.formula_reverse_cache.resize(gt_size);
-        for (size_t b = 0; b <= n_alts; ++b)
-            for (size_t a = 0; a <= b; ++a)
-                filter_vectors.formula_reverse_cache[bio::io::var::detail::vcf_gt_formula(a, b)] = {a, b};
-    }
 }
 
 template <typename T>
@@ -130,10 +137,10 @@ inline void remove_by_indexes(std::vector<T> & vec, std::span<int const> const f
     vec.resize(vec.size() - removed_range.size());
 }
 
-inline void update_infos(record_t::info_t &       record_info, //← in-out parameter
-                         header_t const &         hdr,
-                         size_t const             record_no,
-                         filter_vectors_t const & filter_vectors)
+inline void update_infos(record_t::info_t & record_info, //← in-out parameter
+                         header_t const &   hdr,
+                         size_t const       record_no,
+                         cache_t const &    filter_vectors)
 {
     std::span<int const> selected_filter_vector{};
 
@@ -183,10 +190,10 @@ inline void update_infos(record_t::info_t &       record_info, //← in-out para
     }
 }
 
-inline void update_genotypes(record_t::genotypes_t &  record_genotypes, //← in-out parameter
-                             header_t const &         hdr,
-                             size_t const             record_no,
-                             filter_vectors_t const & filter_vectors)
+inline void update_genotypes(record_t::genotypes_t & record_genotypes, //← in-out parameter
+                             header_t const &        hdr,
+                             size_t const            record_no,
+                             cache_t const &         filter_vectors)
 {
     std::span<int const> selected_filter_vector{};
 
@@ -265,9 +272,9 @@ inline void update_genotypes(record_t::genotypes_t &  record_genotypes, //← in
     }
 }
 
-inline void fix_GT(record_t::genotypes_t &  record_genotypes, //← in-out parameter
-                   size_t const             record_no,
-                   filter_vectors_t const & filter_vectors)
+inline void fix_GT(record_t::genotypes_t & record_genotypes, //← in-out parameter
+                   size_t const            record_no,
+                   cache_t const &         filter_vectors)
 {
     std::span<std::string> all_GT{};
 
@@ -307,11 +314,12 @@ inline void fix_GT(record_t::genotypes_t &  record_genotypes, //← in-out param
                                               size_t const            record_no,
                                               header_t const &        hdr,
                                               program_options const & opts,
-                                              filter_vectors_t &      filter_vectors)
+                                              cache_t &               filter_vectors)
 {
     size_t n_alts = record.alt.size();
 
-    determine_filtered_alleles(record.info, record_no, n_alts, opts, filter_vectors);
+    determine_filter_vector_R(record.info, record_no, n_alts, opts, filter_vectors);
+    determine_filter_vector_AG(n_alts, filter_vectors);
 
     log(opts, "filter_vector.A: {}\n", filter_vectors.A);
     log(opts, "filter_vector.R: {}\n", filter_vectors.R);
@@ -340,3 +348,5 @@ inline void fix_GT(record_t::genotypes_t &  record_genotypes, //← in-out param
 
     return false;
 }
+
+} // namespace _remove

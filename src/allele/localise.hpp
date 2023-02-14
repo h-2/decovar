@@ -32,7 +32,10 @@
 #include "../misc.hpp"
 #include "allele.hpp"
 
-struct localise_cache_t
+namespace _localise
+{
+
+struct cache_t
 {
     // vector of size L that contains the indexes of the retained alleles for each sample
     bio::ranges::concatenated_sequences<std::vector<int32_t /*TODO?*/>> laa;
@@ -93,7 +96,7 @@ inline void concatenated_sequences_create_scaffold(bio::ranges::concatenated_seq
 }
 
 template <typename int_t>
-inline void determine_laa(localise_cache_t &                                              cache,
+inline void determine_laa(cache_t &                                                       cache,
                           bio::ranges::concatenated_sequences<std::vector<int_t>> const & PLs,
                           record_t const &                                                record,
                           size_t const                                                    record_no,
@@ -162,7 +165,7 @@ inline void localise_alleles(record_t &              record,
                              size_t const            record_no,
                              header_t const &        hdr,
                              program_options const & opts,
-                             localise_cache_t &      cache)
+                             cache_t &               cache)
 {
 #ifndef NDEBUG
     size_t const n_alts = record.alt.size();
@@ -307,7 +310,7 @@ inline void pseudo_localise_alleles(record_t &              record,
                                     size_t const            record_no,
                                     header_t const &        hdr,
                                     program_options const & opts,
-                                    localise_cache_t &      cache)
+                                    cache_t &               cache)
 {
     size_t const n_alts    = record.alt.size();
     size_t const n_samples = hdr.column_labels.size() - 9;
@@ -352,7 +355,7 @@ inline void pseudo_localise_alleles(record_t &              record,
     record.genotypes.emplace_back("LAA", std::move(cache.laa));
 }
 
-void salvage_localise_cache(record_t & record, localise_cache_t & cache)
+void salvage_cache(record_t & record, cache_t & cache)
 {
     // LPL and LAD have already been swapped with PL and AD, so they don't need to be salvaged
 
@@ -366,3 +369,5 @@ void salvage_localise_cache(record_t & record, localise_cache_t & cache)
         }
     }
 }
+
+} // namespace _localise
