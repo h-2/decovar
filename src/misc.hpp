@@ -124,3 +124,14 @@ inline auto create_writer(std::filesystem::path const & filename, char format, s
     else
         return bio::io::var::writer{filename, var, writer_opts};
 }
+
+// std::vector{std::move(foo), std::move(bar)} actually creates local copies of foo and bar :@
+template <typename T, typename... Args>
+auto make_vector(T && arg1, Args &&... args)
+{
+    std::vector<T> vec;
+    vec.reserve(sizeof...(Args) + 1);
+    vec.emplace_back(std::forward<T>(arg1));
+    (vec.emplace_back(std::forward<Args>(args)), ...);
+    return vec;
+}
