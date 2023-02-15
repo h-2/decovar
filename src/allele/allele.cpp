@@ -33,6 +33,7 @@
 
 #include <sharg/all.hpp>
 
+#include "../generator.hpp"
 #include "../misc.hpp"
 #include "localise.hpp"
 #include "remove.hpp"
@@ -190,31 +191,31 @@ void allele(sharg::parser & parser)
     /* ========= define steps =========== */
 
     /* pre */
-    auto pre_fn = [&](auto && record) -> record_t
+    auto pre_fn = [&](record_t & record) -> record_t &
     {
         ++record_no;
-        return std::move(record);
+        return record;
     };
     auto pre_view = std::views::transform(pre_fn);
 
     /* remove rare alleles */
-    auto remove_rare_alleles_fn = [&](auto && record) -> std::vector<record_t>
+    auto remove_rare_alleles_fn = [&](record_t & record) -> std::generator<record_t &>
     {
         if (record.alt.size() > 1ul && opts.rare_af_threshold != 0.0)
         {
             log(opts, "↓ record no {} allelle-removal begin.\n", record_no);
             bool all_alleles_removed = _remove::remove_rare_alleles(record, record_no, hdr, opts, filter_vectors);
             log(opts, "↑ record no {} allelle-removal end.\n", record_no);
-            if (all_alleles_removed == true)
-                return std::vector<record_t>{};
+            if (all_alleles_removed)
+                co_return;
         }
 
-        return make_vector(std::move(record));
+        co_yield record;
     };
     auto remove_rare_alleles_view = std::views::transform(remove_rare_alleles_fn) | std::views::join;
 
     /* split */
-    auto split_fn = [&](auto && record) -> std::vector<record_t>
+    auto split_fn = [&](record_t & record) -> std::generator<record_t &>
     {
         if (opts.split_by_length > 0 && _split::needs_splitting(record, opts))
         {
@@ -236,15 +237,15 @@ void allele(sharg::parser & parser)
 
             log(opts, "↑ record no {} splitting-by-length end.\n", record_no);
 
-            return make_vector(std::move(record0), std::move(record));
+            co_yield record0;
         }
 
-        return make_vector(std::move(record));
+        co_yield record;
     };
     auto split_view = std::views::transform(split_fn) | std::views::join;
 
     /* localise */
-    auto localise_fn = [&](auto && record) -> record_t
+    auto localise_fn = [&](record_t & record) -> record_t &
     {
         if (opts.local_alleles != 0)
         {
@@ -262,7 +263,7 @@ void allele(sharg::parser & parser)
             }
         }
 
-        return std::move(record);
+        return record;
     };
     auto localise_view = std::views::transform(localise_fn);
 
@@ -270,7 +271,7 @@ void allele(sharg::parser & parser)
     auto pipeline = reader | pre_view | remove_rare_alleles_view | split_view | localise_view;
 
     /* ========= iterate =========== */
-    for (record_t && record : pipeline)
+    for (record_t & record : pipeline)
     {
         /* finally write the (modified) record */
         writer.push_back(record);
@@ -278,6 +279,5 @@ void allele(sharg::parser & parser)
         /* salvage memory */
         if (opts.local_alleles != 0 && ((record.alt.size() > opts.local_alleles) || opts.transform_all))
             _localise::salvage_cache(record, localise_cache);
-        std::swap(reader.front(), record);
     }
 }
