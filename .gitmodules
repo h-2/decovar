@@ -10,3 +10,6 @@
 [submodule "submodules/fmt"]
 	path = submodules/fmt
 	url = ../../fmtlib/fmt.git
+[submodule "submodules/generator"]
+	path = submodules/generator
+	url = ../../lewissbaker/generator.git
