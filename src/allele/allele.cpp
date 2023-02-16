@@ -159,7 +159,7 @@ void allele(sharg::parser & parser)
     /* setup writer */
     bio::io::var::writer writer = create_writer(opts.output_file, opts.output_file_type, writer_threads);
 
-    /* setup header */
+    /* ========= setup header =========== */
     if (opts.local_alleles > 0ul) // we need to create a new header
     {
         bio::io::var::header new_hdr = reader.header(); // create copy

@@ -125,13 +125,19 @@ inline auto create_writer(std::filesystem::path const & filename, char format, s
         return bio::io::var::writer{filename, var, writer_opts};
 }
 
-// std::vector{std::move(foo), std::move(bar)} actually creates local copies of foo and bar :@
-template <typename T, typename... Args>
-auto make_vector(T && arg1, Args &&... args)
+template <typename T>
+inline void concatenated_sequences_create_scaffold(bio::ranges::concatenated_sequences<T> & concat_seqs,
+                                                   size_t const                             outer_size,
+                                                   size_t const                             inner_size)
 {
-    std::vector<T> vec;
-    vec.reserve(sizeof...(Args) + 1);
-    vec.emplace_back(std::forward<T>(arg1));
-    (vec.emplace_back(std::forward<Args>(args)), ...);
-    return vec;
+    concat_seqs.clear();
+    auto && [data_vec, data_delim] = concat_seqs.raw_data();
+
+    data_vec.resize(outer_size * inner_size);
+
+    data_delim.resize(outer_size + 1ul);
+    for (size_t i = 0; i < data_delim.size(); ++i)
+        data_delim[i] = i * inner_size;
+
+    assert(data_delim.back() == data_vec.size());
 }

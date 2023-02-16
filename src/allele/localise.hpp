@@ -78,23 +78,6 @@ inline double PL_to_prob(int32_t const PL_val)
     return std::pow(10.0, static_cast<double>(PL_val) / -10.0);
 }
 
-template <typename T>
-inline void concatenated_sequences_create_scaffold(bio::ranges::concatenated_sequences<T> & concat_seqs,
-                                                   size_t const                             outer_size,
-                                                   size_t const                             inner_size)
-{
-    concat_seqs.clear();
-    auto && [data_vec, data_delim] = concat_seqs.raw_data();
-
-    data_vec.resize(outer_size * inner_size);
-
-    data_delim.resize(outer_size + 1ul);
-    for (size_t i = 0; i < data_delim.size(); ++i)
-        data_delim[i] = i * inner_size;
-
-    assert(data_delim.back() == data_vec.size());
-}
-
 template <typename int_t>
 inline void determine_laa(cache_t &                                                       cache,
                           bio::ranges::concatenated_sequences<std::vector<int_t>> const & PLs,

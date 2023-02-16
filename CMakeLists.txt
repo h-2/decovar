@@ -46,7 +46,7 @@ add_subdirectory(submodules/fmt)
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
-add_executable (decovar src/main.cpp src/allele/allele.cpp)
+add_executable (decovar src/main.cpp src/allele/allele.cpp src/binalleles/binalleles.cpp)
 target_link_libraries (decovar sharg::sharg fmt::fmt-header-only biocpp::core biocpp::io)
 target_compile_options(decovar PRIVATE -Wall -Wextra)
 
