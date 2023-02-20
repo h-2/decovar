@@ -11,7 +11,13 @@ int main(int argc, char ** argv)
 {
     std::ios::sync_with_stdio(false);
 
-    sharg::parser parser{"decovar", argc, argv, sharg::update_notifications::off, {"allele", "binalleles"}};
+    sharg::parser parser{
+      "decovar",
+      argc,
+      argv,
+      sharg::update_notifications::off,
+      {"allele", "binalleles"}
+    };
     parser.info.author            = "Hannes Hauswedell";
     parser.info.short_description = "deCODE variant tools.";
     parser.info.version           = "0.1.0";

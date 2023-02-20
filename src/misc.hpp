@@ -90,7 +90,6 @@ public:
 // Initialisation and program setup
 // ============================================================================
 
-
 // TODO we need to move more of this into bioc++
 inline auto create_writer(std::filesystem::path const & filename, char format, size_t const threads)
 {

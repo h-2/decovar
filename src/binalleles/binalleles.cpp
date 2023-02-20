@@ -90,17 +90,13 @@ program_options parse_options(sharg::parser & parser)
       true);
 
     parser.add_flag(opts.bin_by_length,
-                      sharg::config{
-                        .long_id     = "bin-by-length",
-                        .description = "Activates this option."
-    });
+                    sharg::config{.long_id = "bin-by-length", .description = "Activates this option."});
 
     parser.add_flag(opts.same_length_splits,
-                      sharg::config{
-                        .long_id     = "same-length-splits",
-                        .description = "By default, records are skipped where the split happens between alleles of "
-                        "the same length. This options enables writing of all records."
-    });
+                    sharg::config{.long_id     = "same-length-splits",
+                                  .description = "By default, records are skipped where the split happens between "
+                                                 "alleles of "
+                                                 "the same length. This options enables writing of all records."});
 
     parser.add_subsection("Performance:");
     parser.add_option(opts.threads,
@@ -117,8 +113,8 @@ program_options parse_options(sharg::parser & parser)
 
 template <typename int_t>
 bio::ranges::concatenated_sequences<std::vector<int_t>> & establish_PLs(
-    bio::io::var::genotype_element_value_type<bio::io::ownership::deep> & variant,
-    size_t const n_samples)
+  bio::io::var::genotype_element_value_type<bio::io::ownership::deep> & variant,
+  size_t const                                                          n_samples)
 {
     if (!std::holds_alternative<bio::ranges::concatenated_sequences<std::vector<int_t>>>(variant))
     {
@@ -154,42 +150,40 @@ void main(sharg::parser & parser)
 
         new_hdr.infos.clear();
         bio::io::var::header::format_t ref{
-            .id = "REFBIN_INDEXES",
-            .number = bio::io::var::header_number::dot,
-            .type = "Integer",
-            .type_id = bio::io::var::value_type_id::vector_of_int16, //TODO configure size?
-            .description = "Indexes of original alleles binned as the reference.",
+          .id          = "REFBIN_INDEXES",
+          .number      = bio::io::var::header_number::dot,
+          .type        = "Integer",
+          .type_id     = bio::io::var::value_type_id::vector_of_int16, //TODO configure size?
+          .description = "Indexes of original alleles binned as the reference.",
         };
         new_hdr.infos.push_back(std::move(ref));
 
         bio::io::var::header::format_t ref_max{
-            .id = "REFBIN_MAXLEN",
-            .number = 1,
-            .type = "Integer",
-            .type_id = bio::io::var::value_type_id::int32,
-            .description = "Maximum allele length in REFBIN.",
+          .id          = "REFBIN_MAXLEN",
+          .number      = 1,
+          .type        = "Integer",
+          .type_id     = bio::io::var::value_type_id::int32,
+          .description = "Maximum allele length in REFBIN.",
         };
         new_hdr.infos.push_back(std::move(ref_max));
 
-
         bio::io::var::header::format_t alt{
-            .id = "ALTBIN_INDEXES",
-            .number = bio::io::var::header_number::dot,
-            .type = "Integer",
-            .type_id = bio::io::var::value_type_id::vector_of_int16, //TODO configure size?
-            .description = "Indexes of original alleles binned as the ALT.",
+          .id          = "ALTBIN_INDEXES",
+          .number      = bio::io::var::header_number::dot,
+          .type        = "Integer",
+          .type_id     = bio::io::var::value_type_id::vector_of_int16, //TODO configure size?
+          .description = "Indexes of original alleles binned as the ALT.",
         };
         new_hdr.infos.push_back(std::move(alt));
 
         bio::io::var::header::format_t alt_min{
-            .id = "ALTBIN_MINLEN",
-            .number = 1,
-            .type = "Integer",
-            .type_id = bio::io::var::value_type_id::int32,
-            .description = "Minimum allale length in ALTBIN.",
+          .id          = "ALTBIN_MINLEN",
+          .number      = 1,
+          .type        = "Integer",
+          .type_id     = bio::io::var::value_type_id::int32,
+          .description = "Minimum allale length in ALTBIN.",
         };
         new_hdr.infos.push_back(std::move(alt_min));
-
 
         new_hdr.formats.clear();
         new_hdr.formats.push_back(bio::io::var::reserved_formats.at("GT"));
@@ -255,8 +249,8 @@ void main(sharg::parser & parser)
         {
             bool has_PL = false;
             for (auto && [key, value] : record.genotypes)
-                    if (key == "PL")
-                        has_PL = true;
+                if (key == "PL")
+                    has_PL = true;
             if (!has_PL)
             {
                 co_yield record;
@@ -280,8 +274,7 @@ void main(sharg::parser & parser)
         // fmt::print(stderr, "allele_lengths (sorted): {}\n", allele_lengths);
 
         new_rec.chrom = record.chrom;
-        new_rec.pos  = record.pos;
-
+        new_rec.pos   = record.pos;
 
         for (size_t i = 0; i < indexes_v.size() - 1; ++i)
         {
@@ -301,76 +294,79 @@ void main(sharg::parser & parser)
             std::ranges::copy(indexes_v | std::views::drop(i + 1), std::back_inserter(altbin_indexes));
 
             auto visitor = bio::meta::overloaded{
-                [] (auto const &) { throw decovar_error{"PL field was in wrong state"}; },
-                [&] <typename int_t> (bio::ranges::concatenated_sequences<std::vector<int_t>> const & in_PLs)
-            {
-                assert(n_samples == in_PLs.size());
-                if (in_PLs.concat_size() != n_samples * (bio::io::var::detail::vcf_gt_formula(n_alts, n_alts) + 1))
-                {
-                    throw decovar_error{
-                    "[Record no: {}] Currently, every sample must be diploid and must contain the "
-                    "full number of PL values (e.g. no single '.' placeholder allowed).",
-                    record_no};
-                }
+              [](auto const &) { throw decovar_error{"PL field was in wrong state"}; },
+              [&]<typename int_t>(bio::ranges::concatenated_sequences<std::vector<int_t>> const & in_PLs)
+              {
+                  assert(n_samples == in_PLs.size());
+                  if (in_PLs.concat_size() != n_samples * (bio::io::var::detail::vcf_gt_formula(n_alts, n_alts) + 1))
+                  {
+                      throw decovar_error{
+                        "[Record no: {}] Currently, every sample must be diploid and must contain the "
+                        "full number of PL values (e.g. no single '.' placeholder allowed).",
+                        record_no};
+                  }
 
-                bio::ranges::concatenated_sequences<std::vector<int_t>> & out_PLs =
+                  bio::ranges::concatenated_sequences<std::vector<int_t>> & out_PLs =
                     establish_PLs<int_t>(new_rec.genotypes[1].value, n_samples);
 
-                for (size_t j = 0; j < n_samples; ++j)
-                {
-                    std::span<int_t const> const in_PL  = in_PLs[j];
-                    assert(in_PL.size() == bio::io::var::detail::vcf_gt_formula(n_alts, n_alts) + 1);
-                    std::span<int_t> const       out_PL = out_PLs[j];
+                  for (size_t j = 0; j < n_samples; ++j)
+                  {
+                      std::span<int_t const> const in_PL = in_PLs[j];
+                      assert(in_PL.size() == bio::io::var::detail::vcf_gt_formula(n_alts, n_alts) + 1);
+                      std::span<int_t> const out_PL = out_PLs[j];
 
-                    /* 0/0 value */
-                    out_PL[0] = std::numeric_limits<int_t>::max();
-                    for (size_t const b : refbin_indexes)
-                        for (size_t const a : refbin_indexes)
-                            if (a <= b)
-                                out_PL[0] = std::min<int_t>(out_PL[0], in_PL[bio::io::var::detail::vcf_gt_formula(a, b)]);
+                      /* 0/0 value */
+                      out_PL[0] = std::numeric_limits<int_t>::max();
+                      for (size_t const b : refbin_indexes)
+                          for (size_t const a : refbin_indexes)
+                              if (a <= b)
+                                  out_PL[0] =
+                                    std::min<int_t>(out_PL[0], in_PL[bio::io::var::detail::vcf_gt_formula(a, b)]);
 
-                    /* 0/1 value */
-                    out_PL[1] = std::numeric_limits<int_t>::max();
-                    for (size_t const b : refbin_indexes)
-                        for (size_t const a : altbin_indexes)
-                            if (a <= b)
-                                out_PL[1] = std::min<int_t>(out_PL[1], in_PL[bio::io::var::detail::vcf_gt_formula(a, b)]);
-                    for (size_t const b : altbin_indexes)
-                        for (size_t const a : refbin_indexes)
-                            if (a <= b)
-                                out_PL[1] = std::min<int_t>(out_PL[1], in_PL[bio::io::var::detail::vcf_gt_formula(a, b)]);
+                      /* 0/1 value */
+                      out_PL[1] = std::numeric_limits<int_t>::max();
+                      for (size_t const b : refbin_indexes)
+                          for (size_t const a : altbin_indexes)
+                              if (a <= b)
+                                  out_PL[1] =
+                                    std::min<int_t>(out_PL[1], in_PL[bio::io::var::detail::vcf_gt_formula(a, b)]);
+                      for (size_t const b : altbin_indexes)
+                          for (size_t const a : refbin_indexes)
+                              if (a <= b)
+                                  out_PL[1] =
+                                    std::min<int_t>(out_PL[1], in_PL[bio::io::var::detail::vcf_gt_formula(a, b)]);
 
-                    /* 1/1 value */
-                    out_PL[2] = std::numeric_limits<int_t>::max();
-                    for (size_t const b : altbin_indexes)
-                        for (size_t const a : altbin_indexes)
-                            if (a <= b)
-                                out_PL[2] = std::min<int_t>(out_PL[2], in_PL[bio::io::var::detail::vcf_gt_formula(a, b)]);
+                      /* 1/1 value */
+                      out_PL[2] = std::numeric_limits<int_t>::max();
+                      for (size_t const b : altbin_indexes)
+                          for (size_t const a : altbin_indexes)
+                              if (a <= b)
+                                  out_PL[2] =
+                                    std::min<int_t>(out_PL[2], in_PL[bio::io::var::detail::vcf_gt_formula(a, b)]);
 
-                    switch(std::ranges::min_element(out_PL) - out_PL.begin())
-                    {
-                        case 0:
-                            out_GTs[j] = "0/0";
-                            break;
-                        case 1:
-                            out_GTs[j] = "0/1";
-                            break;
-                        case 2:
-                            out_GTs[j] = "1/1";
-                            break;
-                        default:
-                            BIOCPP_UNREACHABLE;
-                            break;
-                    }
-                }
-            }};
+                      switch (std::ranges::min_element(out_PL) - out_PL.begin())
+                      {
+                          case 0:
+                              out_GTs[j] = "0/0";
+                              break;
+                          case 1:
+                              out_GTs[j] = "0/1";
+                              break;
+                          case 2:
+                              out_GTs[j] = "1/1";
+                              break;
+                          default:
+                              BIOCPP_UNREACHABLE;
+                              break;
+                      }
+                  }
+              }};
 
             for (auto && [key, value] : record.genotypes)
                 if (key == "PL")
-                    std::visit(visitor, value), ({break;});
+                    std::visit(visitor, value), ({ break; });
 
             co_yield new_rec;
-
         }
     };
     auto bin_by_length_view = std::views::transform(bin_by_length_fn) | views_cojoin;
@@ -379,4 +375,4 @@ void main(sharg::parser & parser)
     reader | pre_view | bin_by_length_view | writer;
 }
 
-}
+} // namespace _binalleles
