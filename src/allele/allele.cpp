@@ -212,7 +212,7 @@ void allele(sharg::parser & parser)
 
         co_yield record;
     };
-    auto remove_rare_alleles_view = std::views::transform(remove_rare_alleles_fn) | std::views::join;
+    auto remove_rare_alleles_view = std::views::transform(remove_rare_alleles_fn) | views_cojoin;
 
     /* split */
     auto split_fn = [&](record_t & record) -> std::generator<record_t &>
@@ -242,7 +242,7 @@ void allele(sharg::parser & parser)
 
         co_yield record;
     };
-    auto split_view = std::views::transform(split_fn) | std::views::join;
+    auto split_view = std::views::transform(split_fn) | views_cojoin;
 
     /* localise */
     auto localise_fn = [&](record_t & record) -> record_t &

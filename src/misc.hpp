@@ -52,6 +52,10 @@ inline void log(opts_t const & opts, fmt::format_string<T...> format, T &&... ar
     }
 }
 
+// ============================================================================
+// Argument parsing
+// ============================================================================
+
 class input_file_or_stdin_validator : public sharg::input_file_validator
 {
 private:
@@ -81,6 +85,11 @@ public:
             sharg::output_file_validator::operator()(file);
     }
 };
+
+// ============================================================================
+// Initialisation and program setup
+// ============================================================================
+
 
 // TODO we need to move more of this into bioc++
 inline auto create_writer(std::filesystem::path const & filename, char format, size_t const threads)
