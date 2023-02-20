@@ -40,6 +40,7 @@ struct program_options
     char                  output_file_type = 'a';
 
     bool bin_by_length = false;
+    bool same_length_splits = false;
 
     size_t threads = std::max<size_t>(2, std::min<size_t>(8, std::thread::hardware_concurrency()));
 
